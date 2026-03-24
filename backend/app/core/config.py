@@ -1,4 +1,11 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# Resolve .env relative to this file: backend/app/core/config.py -> backend/.env
+_env_path = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(dotenv_path=_env_path)
 
 
 class Settings(BaseSettings):
@@ -25,9 +32,7 @@ class Settings(BaseSettings):
     INTERSWITCH_CLIENT_SECRET: str = ""
     INTERSWITCH_BASE_URL: str = "https://sandbox.interswitchng.com"
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = {"env_file": str(_env_path), "extra": "ignore"}
 
 
 settings = Settings()
