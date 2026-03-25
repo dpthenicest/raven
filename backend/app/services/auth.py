@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
 async def exchange_google_code(code: str) -> dict:
+    logger.info("Exchanging Google OAuth code for user info")
     async with httpx.AsyncClient() as client:
         resp = await client.post(GOOGLE_TOKEN_URL, data={
             "code": code,
@@ -31,7 +33,9 @@ async def exchange_google_code(code: str) -> dict:
             headers={"Authorization": f"Bearer {tokens['access_token']}"},
         )
         user_resp.raise_for_status()
-        return user_resp.json()
+        google_user = user_resp.json()
+        logger.info(f"Google user info retrieved: {google_user.get('email')}")
+        return google_user
 
 
 async def get_or_create_user(db: AsyncSession, google_user: dict) -> User:
@@ -39,6 +43,7 @@ async def get_or_create_user(db: AsyncSession, google_user: dict) -> User:
     user = result.scalar_one_or_none()
 
     if not user:
+        logger.info(f"Creating new user: {google_user['email']}")
         user = User(
             email=google_user["email"],
             oauth_id=google_user["id"],
@@ -46,6 +51,8 @@ async def get_or_create_user(db: AsyncSession, google_user: dict) -> User:
             credits=1,
         )
         db.add(user)
+    else:
+        logger.info(f"Existing user logged in: {google_user['email']}")
 
     user.last_login_at = datetime.utcnow()
     await db.commit()
@@ -54,5 +61,6 @@ async def get_or_create_user(db: AsyncSession, google_user: dict) -> User:
 
 
 async def get_current_user(db: AsyncSession, user_id: str) -> Optional[User]:
+    logger.debug(f"Fetching user by id: {user_id}")
     result = await db.execute(select(User).where(User.id == user_id))
     return result.scalar_one_or_none()

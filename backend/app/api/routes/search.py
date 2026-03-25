@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_credits
@@ -18,9 +19,9 @@ async def coordinate_search(
     current_user: User = Depends(require_credits),
 ):
     """Map-based search. Costs 1 credit."""
+    logger.info(f"Coordinate search by user {current_user.id}: lat={payload.latitude}, lng={payload.longitude}")
     feeder, confidence = await search_by_coordinate(db, payload.latitude, payload.longitude)
 
-    # Deduct credit and log search
     current_user.credits -= 1
     search_log = Search(
         user_id=current_user.id,
@@ -32,6 +33,7 @@ async def coordinate_search(
     )
     db.add(search_log)
     await db.commit()
+    logger.info(f"Coordinate search result: feeder={feeder.name if feeder else None}, confidence={confidence}")
 
     if not feeder:
         return CoordinateSearchOut(feeder=None, confidence=confidence)

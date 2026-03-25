@@ -30,4 +30,5 @@ async def health():
 
 @app.on_event("startup")
 async def startup():
-    logger.info(f"{settings.APP_NAME} started")
+    # logger.info(f"{settings.APP_NAME} started")
+    pass

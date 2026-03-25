@@ -18,6 +18,7 @@ class FeederSuggest(BaseModel):
 
 class FeederDetails(BaseModel):
     id: uuid.UUID
+    disco_code: str
     name: str
     business_unit: Optional[str]
     formatted_address: Optional[str]

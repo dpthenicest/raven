@@ -1,18 +1,18 @@
 import uuid
 from typing import List
 
-import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
 from app.db.session import get_db
-from app.models.disco import Disco
-from app.models.feeder import Feeder, TariffBand
 from app.models.user import User
 from app.schemas.disco import BulkDiscoIn, DiscoOut, DiscoUpdate
-from app.services.nerc import parse_nerc_pdf
+from app.services.disco import get_disco_by_id, get_disco_by_code, list_discos
+from app.services.feeder_import import fetch_pdf_from_disco, parse_and_save_feeders
+from app.models.disco import Disco
+from sqlalchemy import select
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -21,112 +21,33 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.post("/parse-nerc")
 async def parse_nerc_upload(
+    disco_id: uuid.UUID,
     file: UploadFile = File(...),
-    disco_id: uuid.UUID = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Upload a NERC PDF manually and parse feeders into the DB."""
+    """Upload a NERC PDF and parse feeders into the DB for the given disco."""
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
-
-    if not disco_id:
-        raise HTTPException(status_code=400, detail="disco_id query param is required")
-
-    disco = await _get_disco_or_404(db, disco_id)
+    # logger.info(f"NERC PDF upload for disco_id={disco_id}, file={file.filename}")
+    disco = await get_disco_by_id(db, disco_id)
     content = await file.read()
-    return await _parse_and_save(db, content, disco)
+    return await parse_and_save_feeders(db, content, disco)
 
 
-@router.post("/parse-nerc/{disco_id}/fetch")
+@router.post("/parse-nerc/{disco_code}/fetch")
 async def parse_nerc_from_url(
-    disco_id: uuid.UUID,
+    disco_code: str,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """
-    Fetch the PDF from the disco's stored path URL and parse feeders into the DB.
-    The disco must have a valid URL in its `path` field.
-    """
-    disco = await _get_disco_or_404(db, disco_id)
-
-    if not disco.path:
-        raise HTTPException(status_code=400, detail="This DisCo has no PDF path configured")
-
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(disco.path)
-            resp.raise_for_status()
-            content = resp.content
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Failed to fetch PDF: {e}")
-
-    return await _parse_and_save(db, content, disco)
-
-
-# ── HELPERS ───────────────────────────────────────────────────────────────────
-
-async def _get_disco_or_404(db: AsyncSession, disco_id: uuid.UUID) -> Disco:
-    result = await db.execute(select(Disco).where(Disco.id == disco_id))
-    disco = result.scalar_one_or_none()
+    """Fetch the PDF from the disco's stored path URL and parse feeders into the DB."""
+    # logger.info(f"NERC PDF fetch triggered for disco_code={disco_code}")
+    disco = await get_disco_by_code(db, disco_code)
     if not disco:
         raise HTTPException(status_code=404, detail="DisCo not found")
-    return disco
-
-
-async def _parse_and_save(db: AsyncSession, pdf_bytes: bytes, disco: Disco) -> dict:
-    """Parse PDF bytes and upsert feeders into the DB for the given disco."""
-    rows = parse_nerc_pdf(pdf_bytes)
-
-    if not rows:
-        return {"parsed": 0, "saved": 0, "message": "No feeder data found in PDF"}
-
-    saved = 0
-    skipped = 0
-
-    for row in rows:
-        try:
-            band = TariffBand(row["tariff_band"])
-        except ValueError:
-            skipped += 1
-            continue
-
-        # Upsert by disco_id + name (avoid duplicates on re-parse)
-        existing = await db.execute(
-            select(Feeder).where(
-                Feeder.disco_id == disco.id,
-                Feeder.name == row["name"],
-            )
-        )
-        feeder = existing.scalar_one_or_none()
-
-        if feeder:
-            # Update existing
-            feeder.tariff_band = band
-            feeder.business_unit = row.get("business_unit")
-            feeder.state = row.get("state")
-            feeder.cap_kwh = row.get("cap_kwh")
-        else:
-            feeder = Feeder(
-                disco_id=disco.id,
-                name=row["name"],
-                tariff_band=band,
-                business_unit=row.get("business_unit"),
-                state=row.get("state"),
-                cap_kwh=row.get("cap_kwh"),
-            )
-            db.add(feeder)
-
-        saved += 1
-
-    await db.commit()
-    return {
-        "parsed": len(rows),
-        "saved": saved,
-        "skipped": skipped,
-        "disco": disco.name,
-        "message": f"Successfully imported {saved} feeders for {disco.name}",
-    }
+    content = await fetch_pdf_from_disco(disco)
+    return await parse_and_save_feeders(db, content, disco)
 
 
 # ── DISCOS ────────────────────────────────────────────────────────────────────
@@ -140,8 +61,8 @@ async def create_discos(
     """Add one or more DisCos."""
     created = []
     for item in payload.discos:
-        existing = await db.execute(select(Disco).where(Disco.code == item.code))
-        if existing.scalar_one_or_none():
+        if await get_disco_by_code(db, item.code):
+            logger.warning(f"Disco already exists, skipping: {item.code}")
             continue
         disco = Disco(**item.model_dump())
         db.add(disco)
@@ -149,16 +70,16 @@ async def create_discos(
     await db.commit()
     for d in created:
         await db.refresh(d)
+    logger.info(f"Created {len(created)} disco(s)")
     return created
 
 
 @router.get("/discos", response_model=List[DiscoOut])
-async def list_discos(
+async def get_discos(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    result = await db.execute(select(Disco).order_by(Disco.name))
-    return result.scalars().all()
+    return await list_discos(db)
 
 
 @router.get("/discos/{disco_id}", response_model=DiscoOut)
@@ -167,7 +88,7 @@ async def get_disco(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    return await _get_disco_or_404(db, disco_id)
+    return await get_disco_by_id(db, disco_id)
 
 
 @router.put("/discos/{disco_id}", response_model=DiscoOut)
@@ -177,7 +98,7 @@ async def update_disco(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    disco = await _get_disco_or_404(db, disco_id)
+    disco = await get_disco_by_id(db, disco_id)
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(disco, field, value)
     await db.commit()
@@ -191,6 +112,6 @@ async def delete_disco(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    disco = await _get_disco_or_404(db, disco_id)
+    disco = await get_disco_by_id(db, disco_id)
     await db.delete(disco)
     await db.commit()

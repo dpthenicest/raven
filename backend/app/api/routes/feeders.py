@@ -2,6 +2,7 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_credits
@@ -20,7 +21,10 @@ async def suggest(
     _: User = Depends(get_current_active_user),
 ):
     """Free autocomplete search — no credit deduction."""
-    return await suggest_feeders(db, q)
+    logger.debug(f"Feeder suggest query: '{q}'")
+    results = await suggest_feeders(db, q)
+    logger.debug(f"Suggest returned {len(results)} results for '{q}'")
+    return results
 
 
 @router.get("/{feeder_id}/details", response_model=FeederDetails)
@@ -30,13 +34,15 @@ async def feeder_details(
     current_user: User = Depends(require_credits),
 ):
     """Costs 1 credit."""
+    logger.info(f"Feeder details requested: {feeder_id} by user {current_user.id}")
     feeder = await get_feeder_details(db, feeder_id)
     if not feeder:
+        logger.warning(f"Feeder not found: {feeder_id}")
         raise HTTPException(status_code=404, detail="Feeder not found")
 
-    # Deduct credit
     current_user.credits -= 1
     await db.commit()
+    logger.info(f"Credit deducted for user {current_user.id}, remaining: {current_user.credits}")
 
     raven_score = await compute_raven_score(db, feeder_id)
     result = FeederDetails.model_validate(feeder)

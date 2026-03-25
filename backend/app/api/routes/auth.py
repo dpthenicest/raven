@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -23,6 +24,7 @@ GOOGLE_AUTH_URL = (
 
 @router.get("/login/google")
 async def login_google():
+    logger.info("Redirecting to Google OAuth login")
     url = GOOGLE_AUTH_URL.format(
         client_id=settings.GOOGLE_CLIENT_ID,
         redirect_uri=settings.GOOGLE_REDIRECT_URI,
@@ -32,16 +34,20 @@ async def login_google():
 
 @router.get("/callback", response_model=TokenOut)
 async def auth_callback(code: str = Query(...), db: AsyncSession = Depends(get_db)):
+    logger.info("Google OAuth callback received")
     try:
         google_user = await exchange_google_code(code)
-    except Exception:
+    except Exception as e:
+        logger.error(f"OAuth exchange failed: {e}")
         raise HTTPException(status_code=400, detail="OAuth exchange failed")
 
     user = await get_or_create_user(db, google_user)
+    logger.info(f"User authenticated: {user.email}")
     token = create_access_token(str(user.id))
     return TokenOut(access_token=token)
 
 
 @router.get("/me", response_model=UserOut)
 async def get_me(current_user: User = Depends(get_current_active_user)):
+    logger.debug(f"Fetching profile for user: {current_user.email}")
     return current_user

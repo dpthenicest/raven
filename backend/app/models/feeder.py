@@ -31,7 +31,7 @@ class Feeder(Base):
     __tablename__ = "feeders"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    disco_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("discos.id"), nullable=False)
+    disco_code: Mapped[str] = mapped_column(String(10), ForeignKey("discos.code"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     business_unit: Mapped[str] = mapped_column(String, nullable=True)
     tariff_band: Mapped[TariffBand] = mapped_column(Enum(TariffBand), nullable=False)
@@ -46,7 +46,7 @@ class Feeder(Base):
     confidence_score: Mapped[float] = mapped_column(Float, default=1.0)
     last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    disco = relationship("Disco", back_populates="feeders")
+    disco = relationship("Disco", back_populates="feeders", foreign_keys=[disco_code])
     searches = relationship("Search", back_populates="feeder")
     reviews = relationship("Review", back_populates="feeder")
 

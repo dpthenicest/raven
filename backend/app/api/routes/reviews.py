@@ -2,6 +2,7 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,7 @@ async def create_review(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    logger.info(f"Review submitted by user {current_user.id} for feeder {payload.feeder_id}")
     review = Review(
         user_id=current_user.id,
         feeder_id=payload.feeder_id,
@@ -31,6 +33,7 @@ async def create_review(
     db.add(review)
     await db.commit()
     await db.refresh(review)
+    logger.info(f"Review created: {review.id}")
     return review
 
 
@@ -40,7 +43,10 @@ async def get_feeder_reviews(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_active_user),
 ):
+    logger.debug(f"Fetching reviews for feeder {feeder_id}")
     result = await db.execute(
         select(Review).where(Review.feeder_id == feeder_id).order_by(Review.created_at.desc())
     )
-    return result.scalars().all()
+    reviews = result.scalars().all()
+    logger.debug(f"Found {len(reviews)} reviews for feeder {feeder_id}")
+    return reviews
