@@ -15,7 +15,6 @@ def parse_nerc_pdf(pdf_bytes: bytes) -> List[dict]:
     for page in doc:
         text = page.get_text()
         # TODO: implement actual parsing logic based on NERC PDF structure
-        # This is a placeholder that should be adapted to the real document format
         lines = [l.strip() for l in text.splitlines() if l.strip()]
         feeders.extend(_extract_feeders_from_lines(lines))
 
