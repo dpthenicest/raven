@@ -42,6 +42,7 @@ async def get_or_create_user(db: AsyncSession, google_user: dict) -> User:
         user = User(
             email=google_user["email"],
             oauth_id=google_user["id"],
+            name=google_user.get("name"),
             credits=1,
         )
         db.add(user)

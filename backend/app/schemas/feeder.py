@@ -9,6 +9,7 @@ from app.models.feeder import TariffBand
 class FeederSuggest(BaseModel):
     id: uuid.UUID
     name: str
+    business_unit: Optional[str]
     formatted_address: Optional[str]
     tariff_band: TariffBand
 
@@ -18,6 +19,7 @@ class FeederSuggest(BaseModel):
 class FeederDetails(BaseModel):
     id: uuid.UUID
     name: str
+    business_unit: Optional[str]
     formatted_address: Optional[str]
     tariff_band: TariffBand
     state: Optional[str]

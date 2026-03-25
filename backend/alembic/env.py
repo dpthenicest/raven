@@ -27,6 +27,17 @@ def render_item(type_, obj, autogen_context):
     return False
 
 
+# PostGIS system tables to exclude from migrations
+POSTGIS_TABLES = {"spatial_ref_sys", "geometry_columns", "geography_columns", "raster_columns", "raster_overviews"}
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    """Exclude PostGIS system tables from autogenerate."""
+    if type_ == "table" and name in POSTGIS_TABLES:
+        return False
+    return True
+
+
 def run_migrations_offline():
     context.configure(
         url=DB_URL,
@@ -43,6 +54,7 @@ def do_run_migrations(connection):
         connection=connection,
         target_metadata=target_metadata,
         render_item=render_item,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()

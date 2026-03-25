@@ -10,6 +10,7 @@ from app.models.user import UserRole
 class UserOut(BaseModel):
     id: uuid.UUID
     email: EmailStr
+    name: Optional[str]
     credits: int
     role: UserRole
     created_at: datetime
