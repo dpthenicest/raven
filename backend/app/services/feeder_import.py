@@ -71,7 +71,9 @@ async def parse_and_save_feeders(db: AsyncSession, pdf_bytes: bytes, disco: Disc
     
     # Parse PDF
     try:
-        rows, page_stats = parse_nerc_pdf(pdf_bytes)
+        result = parse_nerc_pdf(pdf_bytes)
+        rows = result.get("feeders", [])
+        page_stats = result.get("pages", [])
     except Exception as e:
         logger.error(f"PDF parsing failed for '{disco.name}': {e}", exc_info=True)
         raise HTTPException(

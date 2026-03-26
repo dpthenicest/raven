@@ -34,8 +34,9 @@ Both routes parse the table columns: `STATE | BUSINESS UNIT | FEEDER NAME | NON-
 and upsert the data into the `feeders` table.
 
 
-# HOW TO RUN /BACKEND SERVER
-# Install Tesseract (masOC)
+# HOW TO RUN BACKEND SERVER
+
+# Install Tesseract (macOS)
 brew install tesseract
 
 brew install ccache
