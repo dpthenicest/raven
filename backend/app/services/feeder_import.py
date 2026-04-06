@@ -74,6 +74,7 @@ async def parse_and_save_feeders(db: AsyncSession, pdf_bytes: bytes, disco: Disc
         result = parse_nerc_pdf(pdf_bytes)
         rows = result.get("feeders", [])
         page_stats = result.get("pages", [])
+        rejected_rows = result.get("rejected_rows", [])
     except Exception as e:
         logger.error(f"PDF parsing failed for '{disco.name}': {e}", exc_info=True)
         raise HTTPException(
@@ -88,6 +89,7 @@ async def parse_and_save_feeders(db: AsyncSession, pdf_bytes: bytes, disco: Disc
             "saved": 0,
             "skipped": 0,
             "pages": page_stats,
+            "rejected_rows": rejected_rows,
             "disco": disco.name,
             "message": "No feeder data found in PDF"
         }
@@ -154,13 +156,15 @@ async def parse_and_save_feeders(db: AsyncSession, pdf_bytes: bytes, disco: Disc
     # Commit changes
     try:
         await db.commit()
+        disco_name = disco.name  # Cache before potential session issues
         logger.info(
-            f"Import complete for '{disco.name}': "
+            f"Import complete for '{disco_name}': "
             f"{saved} saved, {skipped} skipped from {len(rows)} parsed rows"
         )
     except Exception as e:
         await db.rollback()
-        logger.error(f"Database commit failed for '{disco.name}': {e}", exc_info=True)
+        disco_name = disco.code  # Use code instead of name to avoid lazy loading after rollback
+        logger.error(f"Database commit failed for disco '{disco_name}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Failed to save feeders to database: {str(e)}"
@@ -171,6 +175,7 @@ async def parse_and_save_feeders(db: AsyncSession, pdf_bytes: bytes, disco: Disc
         "saved": saved,
         "skipped": skipped,
         "pages": page_stats,
+        "rejected_rows": rejected_rows,
         "disco": disco.name,
         "message": f"Successfully imported {saved} feeders for {disco.name}",
     }

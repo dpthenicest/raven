@@ -42,3 +42,27 @@ class CoordinateSearchIn(BaseModel):
 class CoordinateSearchOut(BaseModel):
     feeder: Optional[FeederDetails]
     confidence: str  # HIGH | MEDIUM | LOW
+
+
+class FeederUpdate(BaseModel):
+    """Schema for updating feeder information"""
+    tariff_band: Optional[TariffBand] = None
+    cap_kwh: Optional[float] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    formatted_address: Optional[str] = None
+    business_unit: Optional[str] = None
+    state: Optional[str] = None
+
+
+class FeederCreate(BaseModel):
+    """Schema for manually creating a feeder"""
+    disco_code: str
+    name: str
+    business_unit: Optional[str] = None
+    tariff_band: TariffBand
+    state: Optional[str] = None
+    cap_kwh: Optional[float] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    formatted_address: Optional[str] = None

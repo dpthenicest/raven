@@ -17,6 +17,7 @@ class TariffBand(str, PyEnum):
     C = "C"
     D = "D"
     E = "E"
+    UNKNOWN = "-"  # Fallback for missing/undetected bands
 
 
 class TSVector(UserDefinedType):
@@ -34,7 +35,10 @@ class Feeder(Base):
     disco_code: Mapped[str] = mapped_column(String(10), ForeignKey("discos.code"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     business_unit: Mapped[str] = mapped_column(String, nullable=True)
-    tariff_band: Mapped[TariffBand] = mapped_column(Enum(TariffBand), nullable=False)
+    tariff_band: Mapped[TariffBand] = mapped_column(
+        Enum(TariffBand, values_callable=lambda x: [e.value for e in x]), 
+        nullable=False
+    )
     formatted_address: Mapped[str] = mapped_column(String, nullable=True)
     aliases: Mapped[dict] = mapped_column(JSONB, default=list)
     state: Mapped[str] = mapped_column(String, nullable=True)

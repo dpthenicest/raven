@@ -49,6 +49,7 @@ class RavenPDFParser:
         """
         extracted_feeders = []
         page_metadata = []
+        rejected_rows = []  # Track rejected rows with details
         
         ocr = _get_ocr_engine()
         pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -141,11 +142,18 @@ class RavenPDFParser:
                     logger.debug(f"Page {page_num + 1}, Row {i}: Merged {continuation_count} continuation rows")
                 
                 # Parse the merged row
-                feeder, used_fallback = self._parse_structured_row(merged_row_items, column_boundaries)
+                feeder, used_fallback = self._parse_structured_row(
+                    merged_row_items, column_boundaries, page_num + 1, i
+                )
                 if feeder:
                     page_feeders.append(feeder)
                     if used_fallback:
                         page_fallback_count += 1
+                elif feeder is None:
+                    # Row was rejected, track it
+                    rejected_info = self._get_rejection_info(merged_row_items, column_boundaries, page_num + 1, i)
+                    if rejected_info:
+                        rejected_rows.append(rejected_info)
                 
                 # Move to next unprocessed row
                 i = j if j > i + 1 else i + 1
@@ -168,7 +176,8 @@ class RavenPDFParser:
         
         return {
             "feeders": extracted_feeders,
-            "pages": page_metadata
+            "pages": page_metadata,
+            "rejected_rows": rejected_rows
         }
     
     def _process_ocr_output(self, ocr_data: List) -> List[Dict]:
@@ -306,7 +315,9 @@ class RavenPDFParser:
     def _parse_structured_row(
         self, 
         row_items: List[Dict], 
-        boundaries: List[float]
+        boundaries: List[float],
+        page_num: int = 0,
+        row_idx: int = 0
     ) -> tuple[Optional[Dict], bool]:
         """
         Maps text fragments to columns based on X-coordinates and applies Fill-Down logic.
@@ -392,17 +403,17 @@ class RavenPDFParser:
         # Fallback strategy for missing band
         used_fallback = False
         if not band:
-            # Use "UNKNOWN" as fallback when band cannot be detected
-            band = "UNKNOWN"
+            # Use "-" as fallback when band cannot be detected
+            band = "-"
             used_fallback = True
-            logger.warning(f"Band missing - using fallback 'UNKNOWN' for feeder '{feeder_name}'")
+            logger.warning(f"Band missing - using fallback '-' for feeder '{feeder_name}'")
         
-        if band not in self.VALID_BANDS and band != "UNKNOWN":
+        if band not in self.VALID_BANDS and band != "-":
             logger.debug(f"Row rejected - invalid band '{band}' not in {self.VALID_BANDS}, row: {row_text}")
             return None, False
         
         # Update last known band for tracking (but not for fallback anymore)
-        if not used_fallback and band != "UNKNOWN":
+        if not used_fallback and band != "-":
             self.last_band = band
         
         logger.debug(f"Row accepted - state: {self.last_state}, bu: {self.last_bu}, feeder: {feeder_name}, band: {band}, cap: {cap}{' (FALLBACK)' if used_fallback else ''}")
@@ -414,6 +425,37 @@ class RavenPDFParser:
             "tariff_band": band,
             "cap_kwh": cap
         }, used_fallback
+    
+    def _get_rejection_info(
+        self,
+        row_items: List[Dict],
+        boundaries: List[float],
+        page_num: int,
+        row_idx: int
+    ) -> Optional[Dict]:
+        """Extract information about a rejected row for reporting."""
+        if not row_items:
+            return None
+        
+        col_data = self._map_row_to_columns(row_items, boundaries)
+        
+        # Try to extract whatever we can
+        state = col_data[0].upper() if col_data[0] else self.last_state or "UNKNOWN"
+        bu = col_data[1].upper() if len(col_data) > 1 and col_data[1] else self.last_bu or "UNKNOWN"
+        feeder_name = col_data[2].upper() if len(col_data) > 2 and col_data[2] else "UNKNOWN"
+        
+        # Get raw text for debugging
+        raw_text = " | ".join([item['text'] for item in row_items])
+        
+        return {
+            "page": page_num,
+            "row": row_idx,
+            "state": state,
+            "business_unit": bu,
+            "feeder_name": feeder_name if feeder_name != "UNKNOWN" else None,
+            "raw_text": raw_text,
+            "reason": "Missing required fields or invalid data"
+        }
     
     def _extract_band(self, text: str) -> str:
         """Extract valid band letter (A-E) from text."""
