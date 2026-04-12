@@ -7,6 +7,9 @@ from pydantic_settings import BaseSettings
 _env_path = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(dotenv_path=_env_path)
 
+# Absolute path to backend/ directory
+_backend_dir = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseSettings):
     # App
@@ -27,10 +30,17 @@ class Settings(BaseSettings):
     # Google Maps
     GOOGLE_MAPS_API_KEY: str = ""
 
-    # Interswitch
-    INTERSWITCH_CLIENT_ID: str = ""
-    INTERSWITCH_CLIENT_SECRET: str = ""
-    INTERSWITCH_BASE_URL: str = "https://sandbox.interswitchng.com"
+    # Google Cloud (Document AI)
+    DOCUMENT_AI_PROJECT_ID: str = ""
+    DOCUMENT_AI_LOCATION: str = "us"
+    DOCUMENT_AI_PROCESSOR_ID: str = ""
+
+    # Monnify
+    MONNIFY_API_KEY: str = ""
+    MONNIFY_SECRET_KEY: str = ""
+    MONNIFY_CONTRACT_CODE: str = ""
+    MONNIFY_BASE_URL: str = "https://sandbox.monnify.com"
+    MONNIFY_REDIRECT_URL: str = "http://localhost:3000/payment/callback"
 
     model_config = {"env_file": str(_env_path), "extra": "ignore"}
 

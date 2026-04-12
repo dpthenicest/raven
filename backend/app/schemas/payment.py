@@ -7,7 +7,7 @@ from app.models.transaction import TransactionStatus
 
 
 class PaymentInitIn(BaseModel):
-    amount: float  # in kobo
+    amount: int  # in kobo (e.g. 50000 = ₦500)
 
 
 class PaymentInitOut(BaseModel):

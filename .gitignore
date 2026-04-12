@@ -8,6 +8,12 @@
 *.pfx
 secrets/
 
+# Google Cloud service account keys
+*-service-account.json
+service-account.json
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*.json
+backend/*.json
+
 # Python
 __pycache__/
 *.py[cod]

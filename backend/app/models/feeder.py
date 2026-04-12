@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 
 from geoalchemy2 import Geometry
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import UserDefinedType
@@ -55,6 +55,7 @@ class Feeder(Base):
     reviews = relationship("Review", back_populates="feeder")
 
     __table_args__ = (
+        UniqueConstraint("name", "disco_code", name="uq_feeder_name_disco_code"),
         Index("idx_feeders_search", "search_vector", postgresql_using="gin"),
         Index("idx_feeders_bounds", "bounds", postgresql_using="gist"),
         Index("idx_feeders_name", "name"),
