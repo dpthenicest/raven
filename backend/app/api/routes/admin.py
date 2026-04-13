@@ -9,7 +9,7 @@ from app.api.deps import require_admin
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.myto import FeederLocationOut, MYTOImportRequest, MYTOImportResult
-from app.services.geocoding import GeocodingService
+from app.services.geocoding import GeocodingService, geocode_address, bounds_to_polygon
 from app.services.myto_import import import_myto_batch
 from app.models.feeder_location import FeederLocation, FeederStreet
 from sqlalchemy import select
@@ -154,24 +154,19 @@ async def geocode_feeder_streets_by_disco(
     for location in locations:
         for street in location.streets:
             total_streets += 1
-            parts = [street.street_name]
-            if location.location_description:
-                parts.append(location.location_description)
-            parts.append("Nigeria")
-            address = ", ".join(parts)
 
-            geo = await GeocodingService.geocode_address(address)
+            geo = await geocode_address(street.street_name, location.location_description or "")
             if geo:
                 street.latitude = geo["latitude"]
                 street.longitude = geo["longitude"]
                 street.formatted_address = geo.get("formatted_address")
                 if geo.get("bounds"):
-                    street.bounds = GeocodingService.bounds_to_polygon(geo["bounds"])
+                    street.bounds = bounds_to_polygon(geo["bounds"])
                 geocoded += 1
-                logger.debug(f"Geocoded: {address} → {street.latitude}, {street.longitude}")
+                logger.debug(f"Geocoded [{geo['source']}]: {street.street_name} → {street.latitude}, {street.longitude}")
             else:
                 failed += 1
-                logger.warning(f"Failed to geocode: {address}")
+                logger.warning(f"Failed to geocode: {street.street_name}, {location.location_description}")
 
     await db.commit()
     return {
@@ -187,16 +182,20 @@ async def geocode_feeder_streets_by_disco(
 async def geocode_all_feeder_streets(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
+    force: bool = False,
 ):
     """
     Geocode ALL feeder streets across all discos.
-    Only processes streets where latitude is null.
+    By default only processes streets where latitude is null.
+    Pass ?force=true to re-geocode all streets including already geocoded ones.
     """
-    result = await db.execute(
+    query = (
         select(FeederStreet)
         .join(FeederLocation, FeederStreet.feeder_location_id == FeederLocation.id)
-        .where(FeederStreet.latitude.is_(None))
     )
+    if not force:
+        query = query.where(FeederStreet.latitude.is_(None))
+    result = await db.execute(query)
     streets = result.scalars().all()
 
     if not streets:
@@ -214,24 +213,19 @@ async def geocode_all_feeder_streets(
 
     for street in streets:
         location = location_map.get(street.feeder_location_id)
-        parts = [street.street_name]
-        if location and location.location_description:
-            parts.append(location.location_description)
-        parts.append("Nigeria")
-        address = ", ".join(parts)
 
-        geo = await GeocodingService.geocode_address(address)
+        geo = await geocode_address(street.street_name, location.location_description or "" if location else "")
         if geo:
             street.latitude = geo["latitude"]
             street.longitude = geo["longitude"]
             street.formatted_address = geo.get("formatted_address")
             if geo.get("bounds"):
-                street.bounds = GeocodingService.bounds_to_polygon(geo["bounds"])
+                street.bounds = bounds_to_polygon(geo["bounds"])
             geocoded += 1
-            logger.debug(f"Geocoded: {address} → {street.latitude}, {street.longitude}")
+            logger.debug(f"Geocoded [{geo['source']}]: {street.street_name} → {street.latitude}, {street.longitude}")
         else:
             failed += 1
-            logger.warning(f"Failed to geocode: {address}")
+            logger.warning(f"Failed to geocode: {street.street_name}")
 
     await db.commit()
     return {
